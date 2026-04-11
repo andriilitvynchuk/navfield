@@ -45,6 +45,20 @@ find_package(mp4v2       CONFIG REQUIRED)
 find_package(apriltag    CONFIG REQUIRED)
 find_package(yaml-cpp    CONFIG REQUIRED)
 
+# ---- Stubs for transitive deps that the installed depthai config omits ----
+# dynamic_calibration: referenced in depthaiTargets.cmake but not created by depthaiConfig.cmake
+find_library(DYNAMIC_CALIBRATION_LIB dynamic_calibration REQUIRED)
+add_library(dynamic_calibration_imported SHARED IMPORTED)
+set_target_properties(dynamic_calibration_imported PROPERTIES
+  IMPORTED_LOCATION "${DYNAMIC_CALIBRATION_LIB}"
+)
+# usb-1.0: XLink target uses it as a bare name; newer macOS linker requires an explicit path
+find_library(USB_LIB usb-1.0 REQUIRED)
+add_library(usb-1.0 SHARED IMPORTED)
+set_target_properties(usb-1.0 PROPERTIES
+  IMPORTED_LOCATION "${USB_LIB}"
+)
+
 # ---- depthai-core ----
 find_package(depthai CONFIG REQUIRED)
 
