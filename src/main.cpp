@@ -17,7 +17,7 @@ struct Config {
   int timeout_ms{1000};
 };
 
-Config LoadConfig(const std::string& path) {
+Config load_config(const std::string& path) {
   std::ifstream file(path);
   if (!file.is_open()) {
     return Config{};
@@ -29,28 +29,36 @@ Config LoadConfig(const std::string& path) {
   return cfg;
 }
 
-quill::Logger* SetupLogger() {
+quill::Logger* setup_logger() {
   quill::Backend::start();
   auto sink =
       quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console");
   return quill::Frontend::create_or_get_logger("main", std::move(sink));
 }
 
-}  // namespace navfield
+struct Args {
+  std::string config_path{"config.json"};
+};
 
-int main(int argc, char* argv[]) {
+Args parse_args(int argc, char* argv[]) {
   argparse::ArgumentParser program("navfield", "1.0.0");
   program.add_argument("--config")
       .default_value(std::string{"config.json"})
       .help("Path to JSON config file");
   program.parse_args(argc, argv);
+  return Args{.config_path = program.get<std::string>("--config")};
+}
 
-  quill::Logger* logger = navfield::SetupLogger();
+}  // namespace navfield
 
-  const std::string config_path = program.get<std::string>("--config");
+int main(int argc, char* argv[]) {
+  const navfield::Args args = navfield::parse_args(argc, argv);
+  quill::Logger* logger = navfield::setup_logger();
+
+  const std::string config_path = args.config_path;
   LOG_INFO(logger, "Loading config from: {}", config_path);
 
-  const navfield::Config cfg = navfield::LoadConfig(config_path);
+  const navfield::Config cfg = navfield::load_config(config_path);
   LOG_INFO(logger, "Config: name={}, timeout_ms={}", cfg.name, cfg.timeout_ms);
 
   quill::Backend::stop();

@@ -54,6 +54,8 @@
 ## C++ Style
 
 - Use `cpp_style_guide.md` for all new C++ code
+- Apply Clean Code throughout: small focused functions, intention-revealing names, no surprises
+- Apply Clean Architecture: separate concerns into distinct layers; keep business logic independent of I/O, logging, and CLI parsing
 
 ## Build Commands
 

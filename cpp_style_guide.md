@@ -284,7 +284,7 @@ Within each section: **alphabetical order**.
 | Class data members | `snake_case_` (trailing `_`) | `member_` |
 | Struct data members | `snake_case` (no trailing `_`) | `field` |
 | Constants (static storage) | `kPascalCase` | `kDaysInAWeek` |
-| Functions | `PascalCase()` | `AddEntry()` |
+| Functions | `snake_case()` | `add_entry()` |
 | Accessors/mutators | `snake_case()` | `count()`, `set_count()` |
 | Namespaces | `snake_case` | `my_project` |
 | Enumerators | `kPascalCase` | `kOk` |
@@ -310,7 +310,7 @@ Within each section: **alphabetical order**.
 
 ### Function Comments (declarations)
 - Describe what it does, inputs/outputs, nullability
-- Start with verb phrase: "Opens the file"
+- Start with verb phrase: "opens the file"
 
 ### Function Comments (definitions)
 - Explain *how* it works — tricks, why this approach
