@@ -102,6 +102,37 @@ opts.check_backend_singleton_instance = false;
 quill::Backend::start(opts);
 ```
 
-### 3. Transitive deps & build system
+### 3. `getCvFrame()` ownership — GRAY8 wraps, BGR888p allocates
+`ImgFrame::getCvFrame()` for **GRAY8** returns a cv::Mat that **wraps the
+ImgFrame's internal buffer** (no copy). If the Mat outlives the ImgFrame
+(e.g., moved into a shared slot for a background thread), it becomes a
+dangling pointer the moment the ImgFrame shared_ptr is released. Symptom:
+1–2 fps, visual corruption, or silent UB in the display thread. Fix: always
+`.clone()` after `getCvFrame()` when the Mat must outlive the ImgFrame:
+
+```cpp
+cv::Mat lf = lmsg->getCvFrame().clone();  // owns its buffer
+```
+
+**BGR888p is safe without clone** — `getCvFrame()` must allocate a new Mat
+to perform the planar→interleaved conversion.
+
+### 4. NV12 `getCvFrame()` already returns BGR — do not double-convert
+`requestOutput()` with `NV12` halves USB bandwidth (1.5 vs 3 bytes/pixel).
+`getCvFrame()` on an NV12 ImgFrame does the YUV→BGR conversion internally
+and returns an owned 3-channel (CV_8UC3) BGR mat. Calling `cv::cvtColor` on
+top of it will crash: `Bad number of channels — scn = 3` (the converter
+expects 1-channel NV12 input, not the already-converted BGR). Just use the
+mat directly, same as BGR888p.
+
+### 5. `BGR888i` not supported on OAK-D Lite
+`requestOutput()` with `dai::ImgFrame::Type::BGR888i` compiles and links fine,
+but the OAK-D Lite ISP never produces frames in that format — the queue stays
+permanently empty, flooding the log with "No RGB frame (N misses)" at 1ms
+intervals. Always use `BGR888p` for CAM_A output; getCvFrame() allocates an
+owned cv::Mat during the planar→interleaved conversion, so the Mat is safe to
+hold beyond the ImgFrame's lifetime (required for threaded capture).
+
+### 4. Transitive deps & build system
 - All depthai transitive `find_package` calls live in `cmake/depthai_bootstrap.cmake` — do not inline them in `CMakeLists.txt`.
 - Always configure via `cmake --preset debug|release` — the preset sets `CMAKE_PREFIX_PATH` for depthai's vcpkg deps automatically.

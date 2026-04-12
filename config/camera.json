@@ -1,6 +1,7 @@
 {
-  "fps": 30,
-  "stereo_resolution": "THE_400_P",
+  "stereo_fps": 30,
+  "stereo_resolution": "THE_480_P",
+  "rgb_fps": 30,
   "rgb_resolution": "THE_1080_P",
   "show_fps": true
 }

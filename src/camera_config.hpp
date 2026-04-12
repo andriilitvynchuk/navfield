@@ -9,8 +9,9 @@
 namespace navfield {
 
 struct CameraConfig {
-  int fps{30};
-  std::string stereo_resolution{"THE_400_P"};
+  int stereo_fps{60};
+  int rgb_fps{30};
+  std::string stereo_resolution{"THE_480_P"};
   std::string rgb_resolution{"THE_1080_P"};
   bool show_fps{true};
 };
@@ -22,7 +23,10 @@ inline CameraConfig load_camera_config(const std::string& path) {
   }
   const nlohmann::json j = nlohmann::json::parse(file);
   CameraConfig cfg;
-  if (j.contains("fps")) cfg.fps = j["fps"].get<int>();
+  if (j.contains("stereo_fps"))
+    cfg.stereo_fps = j["stereo_fps"].get<int>();
+  if (j.contains("rgb_fps"))
+    cfg.rgb_fps = j["rgb_fps"].get<int>();
   if (j.contains("stereo_resolution"))
     cfg.stereo_resolution = j["stereo_resolution"].get<std::string>();
   if (j.contains("rgb_resolution"))
