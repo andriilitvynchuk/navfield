@@ -63,8 +63,8 @@
 # One-time system dependency
 brew install quill
 
-# Configure (always use Ninja)
-cmake -B build -GNinja -DCMAKE_BUILD_TYPE=Debug
+# Configure — presets encode CMAKE_PREFIX_PATH and generator automatically
+cmake --preset debug     # Debug build  (or: --preset release)
 
 # Build
 cmake --build build

@@ -38,7 +38,8 @@ cmake -B build -GNinja \
   -DBUILD_SHARED_LIBS=ON \
   -DCMAKE_INSTALL_PREFIX=/usr/local \
   -DVCPKG_BUILD_TYPE=release
-
+cmake --build build --parallel 8
+sudo cmake --build build --target install
 ```
 
 `-DVCPKG_BUILD_TYPE=release` skips debug variants for all vcpkg deps,
@@ -57,14 +58,18 @@ sudo apt install libopencv-dev ninja-build cmake libcurl4-openssl-dev
 ## 2. Build
 
 ```bash
-cmake -B build -GNinja -DCMAKE_BUILD_TYPE=Debug
+cmake --preset debug    # or --preset release
 cmake --build build
 ```
+
+The preset sets the generator (Ninja), build dir, and the `CMAKE_PREFIX_PATH`
+needed for depthai's vcpkg deps — no extra flags required.
 
 To skip tests:
 
 ```bash
-cmake -B build -GNinja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=OFF
+cmake --preset debug -DBUILD_TESTS=OFF
+cmake --build build
 ```
 
 ---
@@ -115,16 +120,19 @@ ctest --test-dir build
 
 ```
 navfield/
+  cmake/
+    depthai_bootstrap.cmake  workaround for depthai's missing find_dependency() calls
   config/
-    camera.json          shared camera config (fps, resolution)
+    camera.json              shared camera config (fps, resolution)
   src/
-    camera_config.hpp    config loader (shared header)
-    view_rgb.cpp         RGB stream viewer
-    view_stereo.cpp      stereo stream viewer
-    main.cpp             navfield CLI binary
+    camera_config.hpp        config loader (shared header)
+    view_rgb.cpp             RGB stream viewer
+    view_stereo.cpp          stereo stream viewer
+    main.cpp                 navfield CLI binary
   tests/
-  PLAN.md                full 4-phase roadmap
-  README.md              this file
+  CMakePresets.json          build presets (debug / release)
+  PLAN.md                    full 4-phase roadmap
+  README.md                  this file
 ```
 
 ---
