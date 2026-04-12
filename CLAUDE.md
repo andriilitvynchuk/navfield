@@ -72,3 +72,36 @@ cmake --build build
 # Test
 ctest --test-dir build
 ```
+
+## depthai Pitfalls (hard-won fixes — do not regress)
+
+### 1. Queue ordering: BEFORE `pipeline.start()`
+`createOutputQueue()` **must** be called before `pipeline.start()`. The pipeline
+graph is compiled and sent to device on `start()` — any queue registered after
+that is never wired, its ring-buffer is never initialised, and the first
+`tryGet()` dereferences a null pointer (SEGV). Symptom when no device attached:
+start() blocks ~60s, then throws; the exception unwinds before quill can flush
+→ "no log output at all". See PROBLEM.md §Bug A.
+
+```cpp
+// CORRECT ORDER
+auto queue = out->createOutputQueue(4, false);  // before start
+pipeline.start();
+```
+
+### 2. quill + depthai macOS: disable singleton check
+Always set `check_backend_singleton_instance = false` in `BackendOptions` when
+both quill and depthai are linked. depthai's static initializers (spdlog, dcl)
+run before `main()` and corrupt the POSIX semaphore that quill's `BackendWorkerLock`
+creates → `sem_trywait((sem_t*)3)` → SIGSEGV at `0x3` before the first log line.
+See PROBLEM.md §Bug B.
+
+```cpp
+quill::BackendOptions opts;
+opts.check_backend_singleton_instance = false;
+quill::Backend::start(opts);
+```
+
+### 3. Transitive deps & build system
+- All depthai transitive `find_package` calls live in `cmake/depthai_bootstrap.cmake` — do not inline them in `CMakeLists.txt`.
+- Always configure via `cmake --preset debug|release` — the preset sets `CMAKE_PREFIX_PATH` for depthai's vcpkg deps automatically.
