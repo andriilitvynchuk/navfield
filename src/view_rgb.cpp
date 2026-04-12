@@ -31,11 +31,14 @@ std::pair<uint32_t, uint32_t> rgb_resolution_dims(const std::string& s) {
 void run(const CameraConfig& cfg, quill::Logger* logger) {
   LOG_INFO(logger, "Starting RGB viewer: {}fps  resolution={}", cfg.fps,
            cfg.rgb_resolution);
+  fprintf(stderr, "[diag] logger created\n"); fflush(stderr);
 
   dai::Pipeline pipeline;
+  fprintf(stderr, "[diag] pipeline created\n"); fflush(stderr);
 
   auto cam = pipeline.create<dai::node::Camera>();
   cam->build(dai::CameraBoardSocket::CAM_A);
+  fprintf(stderr, "[diag] camera built\n"); fflush(stderr);
 
   const auto [w, h] = rgb_resolution_dims(cfg.rgb_resolution);
   auto* out = cam->requestOutput(
@@ -43,8 +46,10 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
       dai::ImgFrame::Type::BGR888p,
       dai::ImgResizeMode::CROP,
       static_cast<float>(cfg.fps));
+  fprintf(stderr, "[diag] output requested, connecting to device...\n"); fflush(stderr);
 
   pipeline.start();
+  fprintf(stderr, "[diag] device connected, starting loop\n"); fflush(stderr);
 
   auto queue = out->createOutputQueue(/*maxSize=*/4, /*blocking=*/false);
 
@@ -54,8 +59,13 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
 
   LOG_INFO(logger, "RGB viewer running — press 'q' to quit.");
 
+  int no_frame_count = 0;
   while (true) {
     auto frame_msg = queue->tryGet<dai::ImgFrame>();
+    if (!frame_msg) {
+      if (++no_frame_count % 1000 == 0)
+        LOG_WARNING(logger, "No frame received yet ({} misses)", no_frame_count);
+    }
     if (frame_msg) {
       cv::Mat frame = frame_msg->getCvFrame();
       ++frame_count;

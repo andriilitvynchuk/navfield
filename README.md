@@ -38,7 +38,7 @@ cmake -B build -GNinja \
   -DBUILD_SHARED_LIBS=ON \
   -DCMAKE_INSTALL_PREFIX=/usr/local \
   -DVCPKG_BUILD_TYPE=release
-cmake --build build --target install --parallel 8
+
 ```
 
 `-DVCPKG_BUILD_TYPE=release` skips debug variants for all vcpkg deps,

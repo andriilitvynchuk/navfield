@@ -90,7 +90,6 @@ target_include_directories(navfield PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(navfield PRIVATE
   argparse
   quill::quill
-  depthai::core
 )
 target_compile_options(navfield PRIVATE -Wall -Wextra -Wpedantic)
 
