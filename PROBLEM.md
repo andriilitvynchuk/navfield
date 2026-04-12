@@ -55,36 +55,74 @@ target_link_libraries(navfield PRIVATE
 
 ---
 
-## Current Open Problem: `view_rgb` — SEGV after ~59s, no log output
+## Fixed: `view_rgb` / `view_stereo` — SEGV after ~59s, no log output
 
-### Symptoms
-- `./build/view_rgb --config config/camera.json` runs for ~59 seconds then SIGSEGV
-- No log output appears at all, even after adding `logger->flush_log()` before all key steps
-- `fprintf(stderr, ...)` diagnostics were added (latest build) to bypass quill entirely
+Two separate bugs, both fixed.
 
-### Hypothesis
-- The 59s matches depthai's device discovery timeout — likely no OAK-D camera is connected, or the camera is in a bad state
-- `pipeline.start()` blocks for ~60s waiting for device, then throws an exception
-- The thrown exception (or subsequent stack unwind) crashes — possibly depthai's signal handlers conflicting with quill's signal handlers
-- `quill::Backend::start()` registers signal handlers; depthai/spdlog may also register them, causing a double-registration crash
+---
 
-### Next diagnostic step
-Run the latest `view_rgb` build — it now prints `[diag] ...` lines to stderr at each step using `fprintf(stderr)`/`fflush(stderr)`. The last `[diag]` line printed before the crash will identify exactly where it fails.
+### Bug A: `createOutputQueue()` called after `pipeline.start()`
 
-Expected output if working:
+Both files called `createOutputQueue()` **after** `pipeline.start()`. In depthai,
+`pipeline.start()` compiles the pipeline graph and sends it to the device — any queue registered
+after that point is never wired in, the ring-buffer is never initialised, and the first
+`tryGet()` dereferences a null/garbage pointer → SEGV.
+
+The ~59s delay was the symptom when no device was attached: `pipeline.start()` blocks ~60s,
+then throws; the uncaught exception unwinds through depthai + quill before quill's async backend
+can flush → "no log output at all".
+
+```cpp
+// WRONG (was)
+pipeline.start();
+auto queue = out->createOutputQueue(4, false);   // too late — graph already compiled
+
+// CORRECT (now)
+auto queue = out->createOutputQueue(4, false);   // registered before graph compile
+pipeline.start();
 ```
-[diag] logger created
-[diag] pipeline created
-[diag] camera built
-[diag] output requested, connecting to device...
-[diag] device connected, starting loop
+
+---
+
+### Bug B: `quill::BackendOptions::check_backend_singleton_instance` crash with depthai
+
+**Symptom:** with depthai linked, `quill::Backend::start()` crashes with
+`SIGSEGV / KERN_INVALID_ADDRESS at 0x3` **before** the first `fprintf` in `main()`.
+Without depthai (e.g. `navfield` / `main.cpp` which only links `argparse + quill`), no crash.
+
+**Root cause:** `quill::BackendOptions::check_backend_singleton_instance` (default `true`)
+creates a POSIX named semaphore via `BackendWorkerLock`. When `libdepthai-core.dylib` is loaded,
+its static initializers run before `main()` — depthai starts spdlog's async thread pool and the
+dcl scheduler. This corrupts the POSIX semaphore state on macOS (Darwin 25 / macOS 26), causing
+`sem_open` to return an invalid pointer (`(sem_t*)3` instead of a valid heap address).
+`sem_trywait((sem_t*)3)` then dereferences address `0x3` → SIGSEGV.
+
+Confirmed via macOS crash report (`~/Library/Logs/DiagnosticReports/`):
+```
+KERN_INVALID_ADDRESS at 0x0000000000000003
+pthread_sem_timed_or_blocked_wait + 15
+quill::v11::detail::BackendWorkerLock::BackendWorkerLock()
+quill::v11::Backend::start()
+main
 ```
 
-If it hangs/crashes at "connecting to device..." → device not found / depthai timeout.
+**Fix:** disable the singleton check (it only guards against a misconfigured multi-module build,
+not relevant here):
+
+```cpp
+quill::BackendOptions backend_opts;
+backend_opts.check_backend_singleton_instance = false;
+quill::Backend::start(backend_opts);
+```
+
+The `BackendOptions` doc explicitly notes: *"In rare cases, this mechanism may interfere with
+certain environments. If necessary, this check can be disabled by setting this option to false."*
+
+---
 
 ### Files changed
-- `CMakeLists.txt` — stubs for `dynamic_calibration_imported` and `usb-1.0`, removed `depthai::core` from navfield
-- `src/view_rgb.cpp` — diagnostic fprintf lines, no_frame_count warning log in loop
+- `src/view_rgb.cpp` — Bug A fix + Bug B fix
+- `src/view_stereo.cpp` — Bug A fix + Bug B fix
 
 ### Build command
 ```bash

@@ -31,14 +31,11 @@ std::pair<uint32_t, uint32_t> rgb_resolution_dims(const std::string& s) {
 void run(const CameraConfig& cfg, quill::Logger* logger) {
   LOG_INFO(logger, "Starting RGB viewer: {}fps  resolution={}", cfg.fps,
            cfg.rgb_resolution);
-  fprintf(stderr, "[diag] logger created\n"); fflush(stderr);
 
   dai::Pipeline pipeline;
-  fprintf(stderr, "[diag] pipeline created\n"); fflush(stderr);
 
   auto cam = pipeline.create<dai::node::Camera>();
   cam->build(dai::CameraBoardSocket::CAM_A);
-  fprintf(stderr, "[diag] camera built\n"); fflush(stderr);
 
   const auto [w, h] = rgb_resolution_dims(cfg.rgb_resolution);
   auto* out = cam->requestOutput(
@@ -46,12 +43,11 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
       dai::ImgFrame::Type::BGR888p,
       dai::ImgResizeMode::CROP,
       static_cast<float>(cfg.fps));
-  fprintf(stderr, "[diag] output requested, connecting to device...\n"); fflush(stderr);
+
+  // Queue must be registered BEFORE pipeline.start() so the graph is wired correctly.
+  auto queue = out->createOutputQueue(/*maxSize=*/4, /*blocking=*/false);
 
   pipeline.start();
-  fprintf(stderr, "[diag] device connected, starting loop\n"); fflush(stderr);
-
-  auto queue = out->createOutputQueue(/*maxSize=*/4, /*blocking=*/false);
 
   auto t_prev = std::chrono::steady_clock::now();
   int frame_count = 0;
@@ -101,7 +97,13 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
 // ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[]) {
-  quill::Backend::start();
+  // Disable BackendWorkerLock (POSIX named semaphore) — it crashes on macOS when
+  // depthai-core is loaded, because depthai's static initializers (spdlog, dcl) corrupt
+  // the semaphore state before main() runs.
+  quill::BackendOptions backend_opts;
+  backend_opts.check_backend_singleton_instance = false;
+  quill::Backend::start(backend_opts);
+
   auto sink =
       quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console");
   auto* logger =

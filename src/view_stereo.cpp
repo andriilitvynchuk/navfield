@@ -48,10 +48,11 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
   auto* right_out = right_cam->requestOutput(
       {w, h}, dai::ImgFrame::Type::GRAY8, dai::ImgResizeMode::CROP, fps);
 
-  pipeline.start();
-
+  // Queues must be registered BEFORE pipeline.start() so the graph is wired correctly.
   auto q_left  = left_out->createOutputQueue(/*maxSize=*/4, /*blocking=*/false);
   auto q_right = right_out->createOutputQueue(/*maxSize=*/4, /*blocking=*/false);
+
+  pipeline.start();
 
   auto t_prev = std::chrono::steady_clock::now();
   int frame_count = 0;
@@ -114,7 +115,9 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
 // ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[]) {
-  quill::Backend::start();
+  quill::BackendOptions backend_opts;
+  backend_opts.check_backend_singleton_instance = false;
+  quill::Backend::start(backend_opts);
   auto sink =
       quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console");
   auto* logger =
