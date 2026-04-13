@@ -1,0 +1,24 @@
+version: "3.9"
+
+x-oak-common: &oak-common
+  build: .
+  privileged: true
+  network_mode: host
+  environment:
+    - DISPLAY=${DISPLAY:-:0}
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix
+    - /dev/bus/usb:/dev/bus/usb
+
+services:
+  view_rgb:
+    <<: *oak-common
+    command: /workspace/build/view_rgb
+
+  view_stereo:
+    <<: *oak-common
+    command: /workspace/build/view_stereo
+
+  navfield:
+    <<: *oak-common
+    command: /workspace/build/navfield

@@ -1,0 +1,8 @@
+build/
+.git/
+deps/
+compile_commands.json
+.vscode/
+.cache/
+.DS_Store
+tasks/

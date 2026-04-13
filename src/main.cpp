@@ -10,6 +10,10 @@
 #include "quill/Logger.h"
 #include "quill/sinks/ConsoleSink.h"
 
+#ifdef WITH_ROS2
+#include <rclcpp/rclcpp.hpp>
+#endif
+
 namespace navfield {
 
 struct Config {
@@ -52,6 +56,9 @@ Args parse_args(int argc, char* argv[]) {
 }  // namespace navfield
 
 int main(int argc, char* argv[]) {
+#ifdef WITH_ROS2
+  rclcpp::init(argc, argv);
+#endif
   const navfield::Args args = navfield::parse_args(argc, argv);
   quill::Logger* logger = navfield::setup_logger();
 
@@ -62,5 +69,8 @@ int main(int argc, char* argv[]) {
   LOG_INFO(logger, "Config: name={}, timeout_ms={}", cfg.name, cfg.timeout_ms);
 
   quill::Backend::stop();
+#ifdef WITH_ROS2
+  rclcpp::shutdown();
+#endif
   return EXIT_SUCCESS;
 }

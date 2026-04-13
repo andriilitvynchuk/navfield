@@ -15,6 +15,11 @@ include(cmake/depthai_bootstrap.cmake)
 find_package(quill   REQUIRED)
 find_package(OpenCV  REQUIRED)
 
+option(WITH_ROS2 "Enable ROS2 rclcpp integration" OFF)
+if(WITH_ROS2)
+  find_package(rclcpp REQUIRED)
+endif()
+
 FetchContent_Declare(argparse
   GIT_REPOSITORY https://github.com/p-ranav/argparse
   GIT_TAG        v3.1)
@@ -25,6 +30,10 @@ add_executable(navfield src/main.cpp)
 target_include_directories(navfield PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(navfield PRIVATE argparse quill::quill)
 target_compile_options(navfield PRIVATE -Wall -Wextra -Wpedantic)
+if(WITH_ROS2)
+  target_compile_definitions(navfield PRIVATE WITH_ROS2)
+  target_link_libraries(navfield PRIVATE rclcpp::rclcpp)
+endif()
 
 # ---- Camera viewer targets ------------------------------------------------
 set(CAMERA_DEPS argparse quill::quill depthai::core ${OpenCV_LIBS})

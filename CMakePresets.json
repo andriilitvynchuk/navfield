@@ -19,10 +19,22 @@
       "name": "release",
       "inherits": "base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "docker",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "/opt/depthai-core/build/vcpkg_installed/x64-linux;/opt/ros/humble",
+        "WITH_ROS2": "ON",
+        "BUILD_TESTS": "ON"
+      }
     }
   ],
   "buildPresets": [
     { "name": "debug",   "configurePreset": "debug"   },
-    { "name": "release", "configurePreset": "release" }
+    { "name": "release", "configurePreset": "release" },
+    { "name": "docker",  "configurePreset": "docker"  }
   ]
 }
