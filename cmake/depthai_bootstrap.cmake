@@ -35,14 +35,21 @@ find_package(apriltag    CONFIG REQUIRED)
 find_package(yaml-cpp    CONFIG REQUIRED)
 
 # --- Targets depthaiTargets.cmake references but depthaiConfig.cmake omits --
+# Guards prevent "target already exists" errors if cmake ever runs this twice or
+# if the vcpkg usb-1.0Config.cmake was already included by a dependency.
+
 find_library(DYNAMIC_CALIBRATION_LIB dynamic_calibration REQUIRED)
-add_library(dynamic_calibration_imported SHARED IMPORTED)
-set_target_properties(dynamic_calibration_imported PROPERTIES
-  IMPORTED_LOCATION "${DYNAMIC_CALIBRATION_LIB}")
+if(NOT TARGET dynamic_calibration_imported)
+  add_library(dynamic_calibration_imported SHARED IMPORTED)
+  set_target_properties(dynamic_calibration_imported PROPERTIES
+    IMPORTED_LOCATION "${DYNAMIC_CALIBRATION_LIB}")
+endif()
 
 find_library(USB_LIB usb-1.0 REQUIRED)
-add_library(usb-1.0 SHARED IMPORTED)
-set_target_properties(usb-1.0 PROPERTIES
-  IMPORTED_LOCATION "${USB_LIB}")
+if(NOT TARGET usb-1.0)
+  add_library(usb-1.0 SHARED IMPORTED)
+  set_target_properties(usb-1.0 PROPERTIES
+    IMPORTED_LOCATION "${USB_LIB}")
+endif()
 
 find_package(depthai CONFIG REQUIRED)
