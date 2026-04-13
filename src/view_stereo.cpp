@@ -22,8 +22,12 @@ namespace navfield {
 std::pair<uint32_t, uint32_t> mono_resolution_dims(const std::string& s) {
   if (s == "THE_400_P") return {640,  400};
   if (s == "THE_480_P") return {640,  480};
-  if (s == "THE_720_P") return {1280, 720};
-  if (s == "THE_800_P") return {1280, 800};
+  // THE_720_P / THE_800_P require OV9282 (OAK-D / OAK-D S2).
+  // OAK-D Lite uses OV7251 (max 640×480) — these modes are not supported.
+  if (s == "THE_720_P" || s == "THE_800_P")
+    throw std::invalid_argument(
+        s + " is not supported on OAK-D Lite (OV7251 max is 640×480). "
+            "Use THE_400_P or THE_480_P.");
   throw std::invalid_argument("Unknown stereo_resolution: " + s);
 }
 

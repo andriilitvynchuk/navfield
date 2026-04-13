@@ -6,6 +6,7 @@
 #include "argparse/argparse.hpp"
 #include "camera_config.hpp"
 #include "depthai/depthai.hpp"
+#include "depthai/pipeline/datatype/EncodedFrame.hpp"
 #include "opencv2/opencv.hpp"
 #include "quill/Backend.h"
 #include "quill/Frontend.h"
@@ -41,11 +42,12 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
 
   const auto [w, h] = rgb_resolution_dims(cfg.rgb_resolution);
 
-  // Camera → VideoEncoder (MJPEG) pipeline:
-  //   NV12 is the ISP's native output.  VideoEncoder compresses each frame
-  //   to ~150–300 KB JPEG on-device, cutting USB transfer from ~3 MB/frame
-  //   (BGR888p) to ~0.2 MB/frame — breaking the USB-2 bandwidth ceiling
-  //   and enabling 30 fps at 1080p.
+  // NV12 is the ISP's native output (1.5 bytes/pixel).  Feed it into an on-device
+  // MJPEG encoder so each frame is ~150–300 KB over USB instead of ~3 MB —
+  // essential on USB 2 (~43 MB/s ceiling).
+  // NOTE: the OAK-D Lite VPU MJPEG encoder tops out at 1080p; 4K is not supported.
+  // Use encoder->out (EncodedFrame), NOT encoder->bitstream (ImgFrame legacy API
+  // that never produces frames in this depthai version).
   auto* out = cam->requestOutput(
       {w, h},
       dai::ImgFrame::Type::NV12,
@@ -56,16 +58,14 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
   encoder->setDefaultProfilePreset(
       static_cast<float>(cfg.rgb_fps),
       dai::VideoEncoderProperties::Profile::MJPEG);
-  // Quality 80 keeps 4 K frames at ~1 MB each (×30 fps ≈ 30 MB/s over USB),
-  // well within USB-2's ~43 MB/s ceiling.  Default (95) risks ~3 MB/frame
-  // at 4 K which would saturate the bus.
+  // Quality 80: ~1 MB/frame at 4K, ~200 KB at 1080p — well within USB-2 ceiling.
   encoder->setQuality(80);
   out->link(encoder->input);
 
-  // Queue must be registered BEFORE pipeline.start() so the graph is
-  // wired correctly.
-  auto* enc_out = &encoder->bitstream;
-  auto queue    = enc_out->createOutputQueue(/*maxSize=*/8, /*blocking=*/false);
+  // Queue must be registered BEFORE pipeline.start() so the graph is wired.
+  // encoder->out (EncodedFrame) and encoder->bitstream (ImgFrame) are mutually
+  // exclusive — use encoder->out.
+  auto queue = encoder->out.createOutputQueue(/*maxSize=*/8, /*blocking=*/false);
 
   pipeline.start();
   LOG_INFO(logger, "RGB viewer running — press 'q' to quit.");
@@ -83,14 +83,14 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
     int  n    = 0;
     int  miss = 0;
     while (!st.stop_requested()) {
-      auto msg = queue->tryGet<dai::ImgFrame>();
+      auto msg = queue->tryGet<dai::EncodedFrame>();
       if (!msg) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         if (++miss % 1000 == 0)
           LOG_WARNING(logger, "No RGB frame ({} misses)", miss);
         continue;
       }
-      // MJPEG bitstream → BGR.  imdecode allocates decoded independently.
+      // MJPEG bitstream → BGR.  imdecode allocates the output independently.
       const auto& raw = msg->getData();
       cv::Mat buf(1, static_cast<int>(raw.size()), CV_8UC1,
                   const_cast<uint8_t*>(raw.data()));
