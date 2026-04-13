@@ -1,5 +1,6 @@
 #include <chrono>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -32,14 +33,35 @@ std::pair<uint32_t, uint32_t> mono_resolution_dims(const std::string& s) {
 }
 
 // ---------------------------------------------------------------------------
+// Device info
+// ---------------------------------------------------------------------------
+
+void log_device_info(dai::Device& device, quill::Logger* logger) {
+  std::ostringstream usb;
+  usb << device.getUsbSpeed();
+
+  std::string cams;
+  for (const auto& s : device.getConnectedCameras())
+    cams += dai::toString(s) + " ";
+
+  LOG_INFO(logger, "Device: {}  id: {}  platform: {}  usb: {}",
+           device.getDeviceName(), device.getDeviceId(),
+           device.getPlatformAsString(), usb.str());
+  LOG_INFO(logger, "Cameras: {}", cams);
+}
+
+// ---------------------------------------------------------------------------
 // Display loop — capture thread decoupled from display thread
 // ---------------------------------------------------------------------------
 
 void run(const CameraConfig& cfg, quill::Logger* logger) {
+  auto device = std::make_shared<dai::Device>();
+  log_device_info(*device, logger);
+
   LOG_INFO(logger, "Starting stereo viewer: {}fps  resolution={}",
            cfg.stereo_fps, cfg.stereo_resolution);
 
-  dai::Pipeline pipeline;
+  dai::Pipeline pipeline(device);
 
   const auto [w, h] = mono_resolution_dims(cfg.stereo_resolution);
   const float fps   = static_cast<float>(cfg.stereo_fps);
@@ -56,21 +78,18 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
       {w, h}, dai::ImgFrame::Type::GRAY8,
       dai::ImgResizeMode::CROP, fps);
 
-  // Queues must be registered BEFORE pipeline.start() so the graph is
-  // wired correctly.
-  auto q_left =
-      left_out->createOutputQueue(/*maxSize=*/8, /*blocking=*/false);
-  auto q_right =
-      right_out->createOutputQueue(/*maxSize=*/8, /*blocking=*/false);
+  // Queues must be registered BEFORE pipeline.start() so the graph is wired.
+  auto q_left  = left_out->createOutputQueue(/*maxSize=*/8, /*blocking=*/false);
+  auto q_right = right_out->createOutputQueue(/*maxSize=*/8, /*blocking=*/false);
 
   pipeline.start();
   LOG_INFO(logger, "Stereo viewer running — press 'q' to quit.");
 
   // Shared state between capture and display threads.
-  cv::Mat  shared_left;
-  cv::Mat  shared_right;
-  double   shared_cap_fps = 0.0;
-  bool     fresh          = false;
+  cv::Mat    shared_left;
+  cv::Mat    shared_right;
+  double     shared_cap_fps = 0.0;
+  bool       fresh          = false;
   std::mutex frame_mtx;
 
   // Capture thread: drains both mono queues, measures capture FPS.
@@ -126,8 +145,8 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
   });
 
   // Display loop: converts GRAY8→BGR, hconcat, overlays labels + FPS.
-  auto t_prev = std::chrono::steady_clock::now();
-  int  disp_n = 0;
+  auto   t_prev   = std::chrono::steady_clock::now();
+  int    disp_n   = 0;
   double disp_fps = 0.0;
 
   while (true) {
@@ -191,8 +210,7 @@ void run(const CameraConfig& cfg, quill::Logger* logger) {
   }
 
   // jthread destructor: calls request_stop() then join() — capture thread
-  // exits within ~1 ms (sleep granularity) before any shared state is torn
-  // down.
+  // exits within ~1 ms (sleep granularity) before any shared state is torn down.
   cv::destroyAllWindows();
 }
 
