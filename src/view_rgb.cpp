@@ -1,5 +1,6 @@
 #include <chrono>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -10,6 +11,7 @@
 #include "opencv2/opencv.hpp"
 #include "quill/Backend.h"
 #include "quill/Frontend.h"
+#include "quill/LogMacros.h"
 #include "quill/sinks/ConsoleSink.h"
 
 namespace navfield {
@@ -22,6 +24,14 @@ std::pair<uint32_t, uint32_t> rgb_resolution_dims(const std::string& s) {
 
 void run(const CameraConfig& cfg) {
   auto device = std::make_shared<dai::Device>();
+
+  auto* logger = quill::Frontend::get_logger("view_rgb");
+  std::ostringstream usb_ss;
+  usb_ss << device->getUsbSpeed();
+  LOG_INFO(logger, "Device name: {}, Product: {}, MxId: {}, USB: {}, IMU: {}",
+           device->getDeviceName(), device->getProductName(),
+           device->getMxId(), usb_ss.str(), device->getConnectedIMU());
+
   dai::Pipeline pipeline(device);
 
   const auto [w, h] = rgb_resolution_dims(cfg.rgb_resolution);

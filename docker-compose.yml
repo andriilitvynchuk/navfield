@@ -1,14 +1,15 @@
-version: "3.9"
-
 x-oak-common: &oak-common
   build: .
   privileged: true
   network_mode: host
   environment:
     - DISPLAY=${DISPLAY:-:0}
+    - XAUTHORITY=/tmp/.docker.xauth
   volumes:
     - /tmp/.X11-unix:/tmp/.X11-unix
     - /dev/bus/usb:/dev/bus/usb
+    - ${XAUTHORITY:-$HOME/.Xauthority}:/tmp/.docker.xauth:ro
+    - ./config:/workspace/config:ro
 
 services:
   view_rgb:
