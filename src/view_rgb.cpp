@@ -7,7 +7,6 @@
 #include "argparse/argparse.hpp"
 #include "camera_config.hpp"
 #include "depthai/depthai.hpp"
-#include "depthai/pipeline/datatype/EncodedFrame.hpp"
 #include "opencv2/opencv.hpp"
 #include "quill/Backend.h"
 #include "quill/Frontend.h"
@@ -42,13 +41,7 @@ void run(const CameraConfig& cfg) {
                                  dai::ImgResizeMode::CROP,
                                  static_cast<float>(cfg.rgb_fps));
 
-  auto encoder = pipeline.create<dai::node::VideoEncoder>();
-  encoder->setDefaultProfilePreset(static_cast<float>(cfg.rgb_fps),
-                                   dai::VideoEncoderProperties::Profile::MJPEG);
-  encoder->setQuality(80);
-  out->link(encoder->input);
-
-  auto queue = encoder->out.createOutputQueue(8, false);
+  auto queue = out->createOutputQueue(8, false);
   pipeline.start();
 
   cv::Mat shared_frame;
@@ -61,17 +54,13 @@ void run(const CameraConfig& cfg) {
     int n = 0;
 
     while (!st.stop_requested()) {
-      auto msg = queue->tryGet<dai::EncodedFrame>();
+      auto msg = queue->tryGet<dai::ImgFrame>();
       if (!msg) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;
       }
 
-      const auto& raw = msg->getData();
-      cv::Mat buf(1, static_cast<int>(raw.size()), CV_8UC1,
-                  const_cast<uint8_t*>(raw.data()));
-      cv::Mat frame = cv::imdecode(buf, cv::IMREAD_COLOR);
-      if (frame.empty()) continue;
+      cv::Mat frame = msg->getCvFrame();
       ++n;
 
       const auto now = std::chrono::steady_clock::now();
