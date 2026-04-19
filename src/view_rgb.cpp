@@ -1,8 +1,6 @@
 #include <chrono>
-#include <mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 
 #include "argparse/argparse.hpp"
 #include "camera_config.hpp"
@@ -44,82 +42,29 @@ void run(const CameraConfig& cfg) {
   auto queue = out->createOutputQueue(8, false);
   pipeline.start();
 
-  cv::Mat shared_frame;
-  double shared_cap_fps = 0.0;
-  bool fresh = false;
-  std::mutex frame_mtx;
-
-  std::jthread cap_thread([&](std::stop_token st) {
-    auto t_prev = std::chrono::steady_clock::now();
-    int n = 0;
-
-    while (!st.stop_requested()) {
-      auto msg = queue->tryGet<dai::ImgFrame>();
-      if (!msg) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        continue;
-      }
-
-      cv::Mat frame = msg->getCvFrame();
-      ++n;
-
-      const auto now = std::chrono::steady_clock::now();
-      const double dt = std::chrono::duration<double>(now - t_prev).count();
-      double new_fps = -1.0;
-      if (dt >= 1.0) {
-        new_fps = n / dt;
-        n = 0;
-        t_prev = now;
-      }
-
-      {
-        std::lock_guard lk(frame_mtx);
-        shared_frame = std::move(frame);
-        fresh = true;
-        if (new_fps >= 0.0) shared_cap_fps = new_fps;
-      }
-    }
-  });
-
   auto t_prev = std::chrono::steady_clock::now();
-  int disp_n = 0;
-  double disp_fps = 0.0;
+  int n = 0;
+  double fps = 0.0;
 
   while (true) {
-    cv::Mat frame;
-    double cap_fps = 0.0;
-    bool got = false;
-    {
-      std::lock_guard lk(frame_mtx);
-      if (fresh) {
-        frame = std::move(shared_frame);
-        cap_fps = shared_cap_fps;
-        fresh = false;
-        got = true;
-      }
+    auto msg = queue->get<dai::ImgFrame>();
+    cv::Mat frame = msg->getCvFrame();
+
+    ++n;
+    const auto now = std::chrono::steady_clock::now();
+    const double dt = std::chrono::duration<double>(now - t_prev).count();
+    if (dt >= 1.0) {
+      fps = n / dt;
+      n = 0;
+      t_prev = now;
     }
 
-    if (got) {
-      ++disp_n;
-      const auto now = std::chrono::steady_clock::now();
-      const double dt = std::chrono::duration<double>(now - t_prev).count();
-      if (dt >= 1.0) {
-        disp_fps = disp_n / dt;
-        disp_n = 0;
-        t_prev = now;
-      }
-
-      if (cfg.show_fps) {
-        cv::putText(frame, "CAP:  " + std::to_string(static_cast<int>(cap_fps)),
-                    {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
-        cv::putText(frame,
-                    "DISP: " + std::to_string(static_cast<int>(disp_fps)),
-                    {10, 65}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 200, 0}, 2);
-      }
-
-      cv::imshow("OAK-D Lite — RGB", frame);
+    if (cfg.show_fps) {
+      cv::putText(frame, "FPS: " + std::to_string(static_cast<int>(fps)),
+                  {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {0, 255, 0}, 2);
     }
 
+    cv::imshow("OAK-D Lite — RGB", frame);
     if (cv::waitKey(1) == 'q') break;
   }
 

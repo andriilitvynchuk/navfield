@@ -1,8 +1,6 @@
 #include <chrono>
-#include <mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 
 #include "argparse/argparse.hpp"
 #include "camera_config.hpp"
@@ -33,120 +31,62 @@ void run(const CameraConfig& cfg) {
   dai::Pipeline pipeline(device);
 
   const auto [w, h] = mono_resolution_dims(cfg.stereo_resolution);
-  const float fps = static_cast<float>(cfg.stereo_fps);
+  const float fps_cfg = static_cast<float>(cfg.stereo_fps);
 
   auto left_cam = pipeline.create<dai::node::Camera>();
   left_cam->build(dai::CameraBoardSocket::CAM_B);
   auto* left_out = left_cam->requestOutput({w, h}, dai::ImgFrame::Type::GRAY8,
-                                           dai::ImgResizeMode::CROP, fps);
+                                           dai::ImgResizeMode::CROP, fps_cfg);
 
   auto right_cam = pipeline.create<dai::node::Camera>();
   right_cam->build(dai::CameraBoardSocket::CAM_C);
   auto* right_out = right_cam->requestOutput({w, h}, dai::ImgFrame::Type::GRAY8,
-                                             dai::ImgResizeMode::CROP, fps);
+                                             dai::ImgResizeMode::CROP, fps_cfg);
 
   auto q_left = left_out->createOutputQueue(8, false);
   auto q_right = right_out->createOutputQueue(8, false);
   pipeline.start();
 
-  cv::Mat shared_left, shared_right;
-  double shared_cap_fps = 0.0;
-  bool fresh = false;
-  std::mutex frame_mtx;
-
-  std::jthread cap_thread([&](std::stop_token st) {
-    auto t_prev = std::chrono::steady_clock::now();
-    int n = 0;
-    std::shared_ptr<dai::ImgFrame> lbuf, rbuf;
-
-    while (!st.stop_requested()) {
-      if (!lbuf) lbuf = q_left->tryGet<dai::ImgFrame>();
-      if (!rbuf) rbuf = q_right->tryGet<dai::ImgFrame>();
-      if (!lbuf || !rbuf) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        continue;
-      }
-
-      cv::Mat lf = lbuf->getCvFrame().clone();
-      cv::Mat rf = rbuf->getCvFrame().clone();
-      lbuf.reset();
-      rbuf.reset();
-      ++n;
-
-      const auto now = std::chrono::steady_clock::now();
-      const double dt = std::chrono::duration<double>(now - t_prev).count();
-      double new_fps = -1.0;
-      if (dt >= 1.0) {
-        new_fps = n / dt;
-        n = 0;
-        t_prev = now;
-      }
-
-      {
-        std::lock_guard lk(frame_mtx);
-        shared_left = std::move(lf);
-        shared_right = std::move(rf);
-        fresh = true;
-        if (new_fps >= 0.0) shared_cap_fps = new_fps;
-      }
-    }
-  });
-
   auto t_prev = std::chrono::steady_clock::now();
-  int disp_n = 0;
-  double disp_fps = 0.0;
+  int n = 0;
+  double fps = 0.0;
 
   while (true) {
-    cv::Mat left, right;
-    double cap_fps = 0.0;
-    bool got = false;
-    {
-      std::lock_guard lk(frame_mtx);
-      if (fresh) {
-        left = std::move(shared_left);
-        right = std::move(shared_right);
-        cap_fps = shared_cap_fps;
-        fresh = false;
-        got = true;
-      }
+    auto lmsg = q_left->get<dai::ImgFrame>();
+    auto rmsg = q_right->get<dai::ImgFrame>();
+
+    cv::Mat left = lmsg->getCvFrame();
+    cv::Mat right = rmsg->getCvFrame();
+
+    ++n;
+    const auto now = std::chrono::steady_clock::now();
+    const double dt = std::chrono::duration<double>(now - t_prev).count();
+    if (dt >= 1.0) {
+      fps = n / dt;
+      n = 0;
+      t_prev = now;
     }
 
-    if (got) {
-      ++disp_n;
-      const auto now = std::chrono::steady_clock::now();
-      const double dt = std::chrono::duration<double>(now - t_prev).count();
-      if (dt >= 1.0) {
-        disp_fps = disp_n / dt;
-        disp_n = 0;
-        t_prev = now;
-      }
+    cv::Mat left_bgr, right_bgr;
+    cv::cvtColor(left, left_bgr, cv::COLOR_GRAY2BGR);
+    cv::cvtColor(right, right_bgr, cv::COLOR_GRAY2BGR);
 
-      cv::Mat left_bgr, right_bgr;
-      cv::cvtColor(left, left_bgr, cv::COLOR_GRAY2BGR);
-      cv::cvtColor(right, right_bgr, cv::COLOR_GRAY2BGR);
+    cv::Mat combined;
+    cv::hconcat(left_bgr, right_bgr, combined);
 
-      cv::Mat combined;
-      cv::hconcat(left_bgr, right_bgr, combined);
+    const int ch = left_bgr.rows;
+    const int cw = left_bgr.cols;
+    cv::putText(combined, "LEFT", {10, ch - 10}, cv::FONT_HERSHEY_SIMPLEX,
+                0.7, {200, 200, 200}, 1);
+    cv::putText(combined, "RIGHT", {cw + 10, ch - 10},
+                cv::FONT_HERSHEY_SIMPLEX, 0.7, {200, 200, 200}, 1);
 
-      const int ch = left_bgr.rows;
-      const int cw = left_bgr.cols;
-      cv::putText(combined, "LEFT", {10, ch - 10}, cv::FONT_HERSHEY_SIMPLEX,
-                  0.7, {200, 200, 200}, 1);
-      cv::putText(combined, "RIGHT", {cw + 10, ch - 10},
-                  cv::FONT_HERSHEY_SIMPLEX, 0.7, {200, 200, 200}, 1);
-
-      if (cfg.show_fps) {
-        cv::putText(
-            combined, "CAP:  " + std::to_string(static_cast<int>(cap_fps)),
-            {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {255, 255, 255}, 2);
-        cv::putText(
-            combined, "DISP: " + std::to_string(static_cast<int>(disp_fps)),
-            {10, 65}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {200, 200, 200}, 2);
-      }
-
-      cv::imshow("OAK-D Lite — Stereo (Left | Right)", combined);
+    if (cfg.show_fps) {
+      cv::putText(combined, "FPS: " + std::to_string(static_cast<int>(fps)),
+                  {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 1.0, {255, 255, 255}, 2);
     }
 
+    cv::imshow("OAK-D Lite — Stereo (Left | Right)", combined);
     if (cv::waitKey(1) == 'q') break;
   }
 
